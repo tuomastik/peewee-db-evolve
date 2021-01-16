@@ -642,14 +642,14 @@ def calc_changes(db, ignore_tables=None, schema=None):
     model = table_names_to_models.get(ntn)
     if not model: continue
     defined_fields = model._meta.sorted_fields
-    
+
     # composite keys do not come from peewee w/ the primary key bit set
     if isinstance(model._meta.primary_key, pw.CompositeKey):
       for field_name in model._meta.primary_key.field_names:
         for field in defined_fields:
           if field_name==field.name and not field.primary_key:
             field.primary_key = True
-    
+
     defined_column_name_to_field = {unicode(_column_name(f)):f for f in defined_fields}
     existing_fks_by_column = {fk.column:fk for fk in foreign_keys_by_table[etn]}
     adds, deletes, renames, alter_statements = calc_column_changes(db, migrator, etn, ntn, ecols, defined_fields, existing_fks_by_column)
@@ -723,30 +723,32 @@ def calc_index_changes(db, migrator, existing_indexes, model, renamed_cols):
     to_run += create_index(model, [fields_by_column_name[col] for col in index[1]], index[2])
   return to_run
 
-def evolve(db, interactive=True, ignore_tables=None, schema=None):
+def evolve(db, interactive=True, ignore_tables=None, schema=None, verbose=False):
   if interactive:
+    verbose = True
+  if verbose:
     print((colorama.Style.BRIGHT + colorama.Fore.RED + 'Making updates to database: {}'.format(db.database) + colorama.Style.RESET_ALL))
   to_run = calc_changes(db, ignore_tables=ignore_tables, schema=schema)
   if not to_run:
-    if interactive:
+    if verbose:
       print('Nothing to do... Your database is up to date!')
     return
 
   commit = True
   if interactive:
     commit = _confirm(db, to_run)
-  _execute(db, to_run, interactive=interactive, commit=commit)
+  _execute(db, to_run, verbose=verbose, commit=commit)
 
 
-def _execute(db, to_run, interactive=True, commit=True):
-  if interactive: print()
+def _execute(db, to_run, verbose=True, commit=True):
+  if verbose: print()
   try:
     with db.atomic() as txn:
       for sql, params in to_run:
-        if interactive or DEBUG: print_sql(' %s; %s' % (sql, params or ''))
+        if verbose or DEBUG: print_sql(' %s; %s' % (sql, params or ''))
         if sql.strip().startswith('--'): continue
         db.execute_sql(sql, params)
-      if interactive:
+      if verbose:
         print()
         print(
           (colorama.Style.BRIGHT + 'SUCCESS!' + colorama.Style.RESET_ALL) if commit else 'TEST PASSED - ROLLING BACK',
